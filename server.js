@@ -32,10 +32,9 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgres://root:hEfX84U6IaYkUVILJhvUjPYx@sahand.liara.cloud:32116/postgres',
-  ssl: false
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
-
 async function initDB() {
   const queries = [
     `CREATE TABLE IF NOT EXISTS users (
