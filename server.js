@@ -369,6 +369,22 @@ app.delete('/api/listings/:id', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+/* ============ ADMIN STATS API ============ */
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    const usersCount = await pool.query('SELECT COUNT(*) FROM users');
+    const listingsCount = await pool.query('SELECT COUNT(*) FROM listings');
+    const convsCount = await pool.query('SELECT COUNT(*) FROM conversations');
+    
+    res.json({
+      users: parseInt(usersCount.rows[0].count),
+      listings: parseInt(listingsCount.rows[0].count),
+      conversations: parseInt(convsCount.rows[0].count)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 /* ============ CAPACITIES API ============ */
 app.get('/api/capacities', async (req, res) => {
