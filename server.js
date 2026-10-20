@@ -701,6 +701,31 @@ app.get('/api/ready/:serviceType', async (req, res) => {
   }
 });
 
+/* ============ USER WATCHES API ============ */
+app.post('/api/watches', async (req, res) => {
+  try {
+    const w = req.body;
+    await pool.query(
+      'INSERT INTO user_watches (id, user_phone, service_type, route_from, route_to, notes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [w.id, w.user_phone, w.service_type, w.route_from, w.route_to, w.notes, Date.now()]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/watches/:phone', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM user_watches WHERE user_phone = $1', [req.params.phone]);
+    res.json({ watches: result.rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+
 
 
 
