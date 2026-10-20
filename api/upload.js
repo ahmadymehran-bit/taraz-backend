@@ -9,7 +9,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // دریافت فایل از درخواست
     const chunks = [];
     for await (const chunk of req) {
       chunks.push(chunk);
@@ -20,7 +19,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'No file received' });
     }
 
-    // تبدیل بافر به Blob برای ارسال به UUpload
     const blob = new Blob([buffer], { type: 'image/jpeg' });
     const formData = new FormData();
     formData.append('file', blob, 'image.jpg');
@@ -31,14 +29,18 @@ export default async function handler(req, res) {
       body: formData
     });
 
-    const result = await uploadRes.text();
+    const resultText = await uploadRes.text();
     
-    // UUpload لینک رو توی پاسخ برمی‌گردونه، اینجا سعی می‌کنیم لینک رو استخراج کنیم
-    return res.status(200).json({ 
-      ok: true, 
-      raw: result,
-      message: 'File sent to UUpload (check raw response)'
-    });
+    // تلاش برای استخراج لینک از پاسخ UUpload (معمولاً لینک داخل تگ‌های HTML هست)
+    const urlMatch = resultText.match(/https:\/\/uupload\.ir\/[^\s"']+/);
+    const imageUrl = urlMatch ? urlMatch[0] : null;
+
+    if (imageUrl) {
+      return res.status(200).json({ ok: true, url: imageUrl });
+    } else {
+      // اگر لینک پیدا نشد، پاسخ خام رو برمی‌گردونیم تا دیباگ کنیم
+      return res.status(200).json({ ok: true, url: null, raw: resultText.substring(0, 500) });
+    }
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
