@@ -340,6 +340,7 @@ app.post('/api/users/:phone/avatar', async (req, res) => {
 /* ============ LISTINGS API ============ */
 app.get('/api/listings', async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store'); // 👈 این خط رو اضافه کن
     const result = await pool.query('SELECT * FROM listings ORDER BY created_at DESC LIMIT 200');
     res.json({ listings: result.rows });
   } catch (e) {
