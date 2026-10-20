@@ -8,6 +8,10 @@
     {
       "src": "api/ai.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "api/upload.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -16,11 +20,12 @@
       "dest": "api/ai.js"
     },
     {
+      "src": "/api/upload",
+      "dest": "api/upload.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "server.js"
     }
   ]
 }
-
-
-
