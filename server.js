@@ -675,6 +675,34 @@ app.post('/api/push/send', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+/* ============ READY PROFILES API ============ */
+app.post('/api/ready', async (req, res) => {
+  try {
+    const p = req.body;
+    await pool.query(
+      'INSERT INTO ready_profiles (phone, name, is_ready, service_type, region, notes, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (phone) DO UPDATE SET name = $2, is_ready = $3, service_type = $4, region = $5, notes = $6, updated_at = $7',
+      [p.phone, p.name, p.is_ready, p.service_type, p.region, p.notes, Date.now()]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/ready/:serviceType', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM ready_profiles WHERE service_type = $1 AND is_ready = true ORDER BY updated_at DESC',
+      [req.params.serviceType]
+    );
+    res.json({ profiles: result.rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+
 
 /* ============ DELETE USER ============ */
 app.delete('/api/users/:phone', async (req, res) => {
