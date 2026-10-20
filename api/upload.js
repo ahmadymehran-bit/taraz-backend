@@ -9,12 +9,35 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // اینجا ما فایل رو از فرم دریافت می‌کنیم
-    // نکته: برای سادگی، فعلاً یک پیام تستی برمی‌گردونیم تا اتصال رو چک کنیم
+    // دریافت فایل از درخواست
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
+
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({ error: 'No file received' });
+    }
+
+    // تبدیل بافر به Blob برای ارسال به UUpload
+    const blob = new Blob([buffer], { type: 'image/jpeg' });
+    const formData = new FormData();
+    formData.append('file', blob, 'image.jpg');
+
+    // ارسال به UUpload
+    const uploadRes = await fetch('https://uupload.ir/upload.php', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await uploadRes.text();
+    
+    // UUpload لینک رو توی پاسخ برمی‌گردونه، اینجا سعی می‌کنیم لینک رو استخراج کنیم
     return res.status(200).json({ 
       ok: true, 
-      message: 'Upload API is ready',
-      note: 'For real upload, we will integrate the service in the next step'
+      raw: result,
+      message: 'File sent to UUpload (check raw response)'
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
