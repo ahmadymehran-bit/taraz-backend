@@ -724,6 +724,34 @@ app.get('/api/watches/:phone', async (req, res) => {
   }
 });
 
+/* ============ MATCHING & NOTIFICATION API ============ */
+app.post('/api/match-alert', async (req, res) => {
+  try {
+    const { listing_id, route_from, route_to, title, region } = req.body;
+    
+    // پیدا کردن راننده‌هایی که درخواست شرطی با این مسیر دارن
+    const result = await pool.query(
+      'SELECT * FROM user_watches WHERE service_type = $1 AND (route_from ILIKE $2 OR route_to ILIKE $3)',
+      ['transport', `%${route_from}%`, `%${route_to}%`]
+    );
+    
+    const matchedDrivers = result.rows;
+    
+    // برای هر راننده، یک اعلان ثبت کن
+    for (const driver of matchedDrivers) {
+      const notifId = 'N' + Date.now() + Math.random().toString(36).substr(2, 5);
+      await pool.query(
+        'INSERT INTO notifications (id, user_phone, type, icon, title, body, read, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [notifId, driver.user_phone, 'match', '🚛', 'بار جدید در مسیر شما!', `آگهی «${title}» در منطقه ${region} ثبت شد.`, false, Date.now()]
+      );
+    }
+    
+    res.json({ ok: true, matched: matchedDrivers.length });
+  } catch (e) {
+    console.error('match-alert error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 
 
