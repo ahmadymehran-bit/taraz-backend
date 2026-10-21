@@ -601,10 +601,10 @@ app.put('/api/escrow/:id/release', async (req, res) => {
 /* ============ UPDATE MISSION CHAIN API ============ */
 app.put('/api/missions/:id', async (req, res) => {
   try {
-    const { steps, total } = req.body;
+    const { steps, total, status } = req.body;
     await pool.query(
-      'UPDATE missions SET steps = $1, total = $2 WHERE id = $3',
-      [JSON.stringify(steps), total, req.params.id]
+      'UPDATE missions SET steps = $1, total = $2, status = COALESCE($3, status) WHERE id = $4',
+      [JSON.stringify(steps), total, status || null, req.params.id]
     );
     res.json({ ok: true });
   } catch (e) {
