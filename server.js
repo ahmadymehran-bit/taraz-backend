@@ -574,6 +574,20 @@ app.post('/api/missions', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+/* ============ UPDATE MISSION CHAIN API ============ */
+app.put('/api/missions/:id', async (req, res) => {
+  try {
+    const { steps, total } = req.body;
+    await pool.query(
+      'UPDATE missions SET steps = $1, total = $2 WHERE id = $3',
+      [JSON.stringify(steps), total, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('update mission error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 /* ============ FAVORITES API ============ */
 app.get('/api/favorites/:phone', async (req, res) => {
