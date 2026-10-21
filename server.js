@@ -574,6 +574,30 @@ app.post('/api/missions', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+/* ============ ESCROW API ============ */
+app.post('/api/escrow', async (req, res) => {
+  try {
+    const { mission_id, buyer_phone, seller_phone, amount } = req.body;
+    const id = 'E' + Date.now();
+    await pool.query(
+      'INSERT INTO escrows (id, mission_id, buyer_phone, seller_phone, amount, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, mission_id, buyer_phone, seller_phone, amount, 'pending', Date.now()]
+    );
+    res.json({ ok: true, id: id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.put('/api/escrow/:id/release', async (req, res) => {
+  try {
+    await pool.query('UPDATE escrows SET status = $1 WHERE id = $2', ['released', req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ============ UPDATE MISSION CHAIN API ============ */
 app.put('/api/missions/:id', async (req, res) => {
   try {
