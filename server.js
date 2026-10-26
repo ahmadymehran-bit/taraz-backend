@@ -944,6 +944,29 @@ app.put('/api/escrow/:id/release', requireAuth, async (req, res) => {
   } catch (e) { fail(res, 'release escrow', e); }
 });
 
+/* تاریخچهٔ تراکنش‌های بیعانه: کاربر فقط تراکنش‌های خودش (خریدار یا فروشنده) را می‌بیند */
+app.get('/api/escrows/:phone', requireAuth, async (req, res) => {
+  try {
+    if (!canActAs(req, req.params.phone)) return res.status(403).json(FORBIDDEN);
+    const r = await pool.query(
+      'SELECT id, mission_id, buyer_phone, seller_phone, amount, status, created_at FROM escrows WHERE buyer_phone = $1 OR seller_phone = $1 ORDER BY created_at DESC LIMIT 100',
+      [req.params.phone]);
+    res.json({
+      escrows: r.rows.map(function (e) {
+        return {
+          id: e.id,
+          missionId: e.mission_id,
+          buyerPhone: e.buyer_phone,
+          sellerPhone: e.seller_phone,
+          amount: Number(e.amount),
+          status: e.status,
+          createdAt: Number(e.created_at),
+        };
+      }),
+    });
+  } catch (e) { fail(res, 'get escrows', e); }
+});
+
 /* ============ FAVORITES API ============ */
 app.get('/api/favorites/:phone', softAuth, async (req, res) => {
   try {
