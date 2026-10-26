@@ -382,7 +382,10 @@ async function initDB() {
     'ALTER TABLE listings ADD COLUMN IF NOT EXISTS location_lng NUMERIC',
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT',
     'ALTER TABLE users ADD COLUMN IF NOT EXISTS security_question TEXT',
-    'ALTER TABLE users ADD COLUMN IF NOT EXISTS security_answer_hash TEXT'
+    'ALTER TABLE users ADD COLUMN IF NOT EXISTS security_answer_hash TEXT',
+    // هر کاربر فقط یک امتیاز به هر نفر دارد (امتیاز تکراری پاک می‌شود)
+    'DELETE FROM ratings a USING ratings b WHERE a.from_phone = b.from_phone AND a.to_phone = b.to_phone AND (a.created_at < b.created_at OR (a.created_at = b.created_at AND a.ctid < b.ctid))',
+    'CREATE UNIQUE INDEX IF NOT EXISTS ratings_from_to_uq ON ratings (from_phone, to_phone)'
   ];
   for (const q of migrations) {
     try { await pool.query(q); } catch (e) { console.warn('Migration skip:', e.message); }
@@ -809,9 +812,10 @@ app.post('/api/bookings', softAuth, async (req, res) => {
 /* ============ RATINGS API ============ */
 app.get('/api/ratings/:phone', async (req, res) => {
   try {
-    const r = await pool.query('SELECT * FROM ratings WHERE to_phone = $1 ORDER BY created_at DESC', [req.params.phone]);
-    const avg = r.rows.length ? r.rows.reduce((a, x) => a + x.score, 0) / r.rows.length : 0;
-    res.json({ ratings: r.rows, avg, count: r.rows.length });
+    const r = await pool.query('SELECT id, from_name, to_phone, score, comment, created_at FROM ratings WHERE to_phone = $1 ORDER BY created_at DESC LIMIT 500', [req.params.phone]);
+    const rows = r.rows.map(x => ({ id: x.id, fromName: x.from_name, toPhone: x.to_phone, score: x.score, comment: x.comment, createdAt: Number(x.created_at) }));
+    const avg = rows.length ? rows.reduce((a, x) => a + x.score, 0) / rows.length : 0;
+    res.json({ ratings: rows, avg, count: rows.length });
   } catch (e) { fail(res, 'get ratings', e); }
 });
 
@@ -823,9 +827,13 @@ app.post('/api/ratings', softAuth, async (req, res) => {
     if (!isPhone(from) || !isPhone(to) || from === to) return res.status(400).json({ error: 'امتیاز نامعتبر است' });
     if (!canActAs(req, from)) return res.status(403).json(FORBIDDEN);
     if (!Number.isInteger(score) || score < 1 || score > 5) return res.status(400).json({ error: 'امتیاز باید بین ۱ تا ۵ باشد' });
+    const w = await rateLimit('rate:' + from, 30, 60 * MIN);
+    if (w) return tooMany(res, w);
     const id = (typeof r.id === 'string' && r.id && r.id.length <= 50) ? r.id : newId('R');
+    // اگر قبلاً به این نفر امتیاز داده، امتیاز قبلی به‌روز می‌شود (تکراری ساخته نمی‌شود)
     await pool.query(
-      'INSERT INTO ratings (id, from_phone, from_name, to_phone, score, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      `INSERT INTO ratings (id, from_phone, from_name, to_phone, score, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (from_phone, to_phone) DO UPDATE SET score = EXCLUDED.score, comment = EXCLUDED.comment, from_name = EXCLUDED.from_name, created_at = EXCLUDED.created_at`,
       [id, from, str(r.fromName).slice(0, 100), to, score, str(r.comment).slice(0, 1000) || null, Date.now()]);
     res.json({ ok: true, id });
   } catch (e) { fail(res, 'post rating', e); }
