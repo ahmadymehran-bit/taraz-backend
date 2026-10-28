@@ -87,6 +87,7 @@ function str(v) { return typeof v === 'string' ? v.trim() : ''; }
 function rawStr(v) { return typeof v === 'string' ? v : ''; }
 function isPhone(v) { return typeof v === 'string' && PHONE_RE.test(v); }
 function bodyOf(req) { return req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}; }
+const SAFE_ID = /^[A-Za-z0-9_-]{1,50}$/;
 function newId(prefix) { return prefix + Date.now().toString(36) + crypto.randomBytes(4).toString('hex'); }
 
 function clientIp(req) {
@@ -626,7 +627,7 @@ app.post('/api/listings', softAuth, async (req, res) => {
     const price = numOrNull(l.price);
     if (price === null || price < 0) return res.status(400).json({ error: 'قیمت نامعتبر است' });
     const photos = Array.isArray(l.photos) ? l.photos.slice(0, 8) : [];
-    const id = (typeof l.id === 'string' && l.id.length > 0 && l.id.length <= 50) ? l.id : newId('L');
+    const id = (typeof l.id === 'string' && SAFE_ID.test(l.id)) ? l.id : newId('L');
     const loc = l.location && typeof l.location === 'object' ? l.location : {};
     await pool.query(
       `INSERT INTO listings (id, seller_phone, seller_name, category_id, title, qty, qty_num, price, old_price, region, description, urgent, urgent_reason, product_key, photos, location_lat, location_lng, created_at)
@@ -683,7 +684,7 @@ app.post('/api/capacities', softAuth, async (req, res) => {
     if (total === null || total <= 0 || price === null || price < 0) {
       return res.status(400).json({ error: 'ظرفیت یا قیمت نامعتبر است' });
     }
-    const id = (typeof c.id === 'string' && c.id.length > 0 && c.id.length <= 50) ? c.id : newId('C');
+    const id = (typeof c.id === 'string' && SAFE_ID.test(c.id)) ? c.id : newId('C');
     await pool.query(
       `INSERT INTO capacities (id, owner_phone, owner_name, service_type, type_id, title, region, route_from, route_to, capacity_total, capacity_used, price, unit, available_from, available_to, rating, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
@@ -727,7 +728,7 @@ app.post('/api/conversations', softAuth, async (req, res) => {
        AND ((buyer_phone = $2 AND seller_phone = $3) OR (buyer_phone = $3 AND seller_phone = $2))`,
       [listingId, buyer, seller]);
     if (ex.rows.length) return res.json({ conversation: ex.rows[0] });
-    const id = (typeof c.id === 'string' && c.id.length > 0 && c.id.length <= 50) ? c.id : newId('V');
+    const id = (typeof c.id === 'string' && SAFE_ID.test(c.id)) ? c.id : newId('V');
     const now = Date.now();
     await pool.query(
       `INSERT INTO conversations (id, listing_id, listing_title, buyer_phone, buyer_name, seller_phone, seller_name, created_at, last_message_at)
@@ -761,7 +762,7 @@ app.post('/api/messages', softAuth, async (req, res) => {
     const from = req.auth ? req.auth.phone : str(m.fromPhone);
     if (!isMember(cr.rows[0], from)) return res.status(403).json(FORBIDDEN);
     if (!canActAs(req, from)) return res.status(403).json(FORBIDDEN);
-    const id = (typeof m.id === 'string' && m.id.length > 0 && m.id.length <= 50) ? m.id : newId('M');
+    const id = (typeof m.id === 'string' && SAFE_ID.test(m.id)) ? m.id : newId('M');
     const now = Date.now();
     await pool.query(
       'INSERT INTO messages (id, conv_id, from_phone, text, read, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
@@ -792,7 +793,7 @@ app.post('/api/bookings', softAuth, async (req, res) => {
     const qty = Number(b.qty), total = Number(b.total), capId = str(b.capacityId);
     if (!Number.isInteger(qty) || qty < 1 || qty > 100000 || !capId) return res.status(400).json({ error: 'تعداد یا ظرفیت نامعتبر است' });
     if (!Number.isFinite(total) || total < 0) return res.status(400).json({ error: 'مبلغ نامعتبر است' });
-    const id = (typeof b.id === 'string' && b.id && b.id.length <= 50) ? b.id : newId('B');
+    const id = (typeof b.id === 'string' && SAFE_ID.test(b.id)) ? b.id : newId('B');
     await client.query('BEGIN');
     const up = await client.query(
       'UPDATE capacities SET capacity_used = COALESCE(capacity_used,0) + $1 WHERE id = $2 AND COALESCE(capacity_used,0) + $1 <= capacity_total RETURNING id',
@@ -829,7 +830,7 @@ app.post('/api/ratings', softAuth, async (req, res) => {
     if (!Number.isInteger(score) || score < 1 || score > 5) return res.status(400).json({ error: 'امتیاز باید بین ۱ تا ۵ باشد' });
     const w = await rateLimit('rate:' + from, 30, 60 * MIN);
     if (w) return tooMany(res, w);
-    const id = (typeof r.id === 'string' && r.id && r.id.length <= 50) ? r.id : newId('R');
+    const id = (typeof r.id === 'string' && SAFE_ID.test(r.id)) ? r.id : newId('R');
     // اگر قبلاً به این نفر امتیاز داده، امتیاز قبلی به‌روز می‌شود (تکراری ساخته نمی‌شود)
     await pool.query(
       `INSERT INTO ratings (id, from_phone, from_name, to_phone, score, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -857,7 +858,7 @@ app.post('/api/notifications', softAuth, async (req, res) => {
     const w = await rateLimit(key, 60, 10 * MIN); if (w) return tooMany(res, w);
     const title = str(n.title).slice(0, 200), body = rawStr(n.body).slice(0, 1000);
     if (!title) return res.status(400).json({ error: 'عنوان اعلان خالی است' });
-    const id = (typeof n.id === 'string' && n.id && n.id.length <= 50) ? n.id : newId('N');
+    const id = (typeof n.id === 'string' && SAFE_ID.test(n.id)) ? n.id : newId('N');
     await pool.query(
       'INSERT INTO notifications (id, user_phone, type, icon, title, body, read, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
       [id, to, str(n.type).slice(0, 50), str(n.icon).slice(0, 10) || '🔔', title, body, false, Date.now()]);
@@ -888,7 +889,7 @@ app.post('/api/missions', softAuth, async (req, res) => {
     const total = Number(m.total);
     if (!Number.isFinite(total) || total < 0) return res.status(400).json({ error: 'مبلغ نامعتبر است' });
     const steps = Array.isArray(m.steps) ? m.steps.slice(0, 50) : [];
-    const id = (typeof m.id === 'string' && m.id && m.id.length <= 50) ? m.id : newId('MS');
+    const id = (typeof m.id === 'string' && SAFE_ID.test(m.id)) ? m.id : newId('MS');
     await pool.query(
       'INSERT INTO missions (id, owner_phone, raw_text, steps, total, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [id, owner, rawStr(m.rawText).slice(0, 3000), JSON.stringify(steps), Math.round(total), missionStatus(m.status, 'draft'), Date.now()]);
@@ -985,7 +986,7 @@ app.post('/api/favorites', softAuth, async (req, res) => {
     if (!canActAs(req, phone)) return res.status(403).json(FORBIDDEN);
     const del = await pool.query('DELETE FROM favorites WHERE user_phone = $1 AND listing_id = $2 RETURNING id', [phone, listingId]);
     if (del.rows.length) return res.json({ ok: true, removed: true });
-    const id = (typeof f.id === 'string' && f.id && f.id.length <= 50) ? f.id : newId('F');
+    const id = (typeof f.id === 'string' && SAFE_ID.test(f.id)) ? f.id : newId('F');
     await pool.query('INSERT INTO favorites (id, user_phone, listing_id, created_at) VALUES ($1,$2,$3,$4)', [id, phone, listingId, Date.now()]);
     res.json({ ok: true, added: true });
   } catch (e) { fail(res, 'favorite', e); }
@@ -1089,7 +1090,7 @@ app.post('/api/watches', softAuth, async (req, res) => {
     if (!canActAs(req, phone)) return res.status(403).json(FORBIDDEN);
     const cnt = await pool.query('SELECT COUNT(*)::int AS c FROM user_watches WHERE user_phone = $1', [phone]);
     if (cnt.rows[0].c >= 50) return res.status(400).json({ error: 'تعداد درخواست‌ها به سقف رسیده است' });
-    const id = (typeof w.id === 'string' && w.id && w.id.length <= 50) ? w.id : newId('W');
+    const id = (typeof w.id === 'string' && SAFE_ID.test(w.id)) ? w.id : newId('W');
     await pool.query(
       'INSERT INTO user_watches (id, user_phone, service_type, route_from, route_to, notes, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
       [id, phone, str(w.service_type).slice(0, 50), str(w.route_from).slice(0, 100),
