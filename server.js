@@ -768,6 +768,20 @@ app.post('/api/messages', softAuth, async (req, res) => {
       'INSERT INTO messages (id, conv_id, from_phone, text, read, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
       [id, cr.rows[0].id, from, text, false, now]);
     await pool.query('UPDATE conversations SET last_message_at = $1 WHERE id = $2', [now, cr.rows[0].id]);
+    try {
+      const c = cr.rows[0];
+      const toPhone = c.buyer_phone === from ? c.seller_phone : c.buyer_phone;
+      const fromName = (c.buyer_phone === from ? c.buyer_name : c.seller_name) || 'کاربر';
+      if (toPhone && toPhone !== from) {
+        const nid = ('NM-' + c.id + '-' + toPhone).slice(0, 50);
+        const preview = text.trim().slice(0, 80);
+        await pool.query(
+          `INSERT INTO notifications (id, user_phone, type, icon, title, body, read, created_at)
+           VALUES ($1,$2,'message','💬',$3,$4,false,$5)
+           ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, body=EXCLUDED.body, read=false, created_at=EXCLUDED.created_at`,
+          [nid, toPhone, 'پیام جدید از ' + fromName, preview, now]);
+      }
+    } catch (ne) { console.error('message notif failed', ne.message); }
     res.json({ ok: true, id });
   } catch (e) { fail(res, 'post message', e); }
 });
