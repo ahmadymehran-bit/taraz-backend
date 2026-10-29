@@ -890,6 +890,10 @@ app.post('/api/notifications/read-conv', softAuth, async (req, res) => {
     await pool.query(
       "UPDATE notifications SET read = true WHERE user_phone = $1 AND type = 'message' AND left(id, $2) = $3",
       [phone, prefix.length, prefix]);
+    const rprefix = 'NR-' + convId + '-';
+    await pool.query(
+      "UPDATE notifications SET read = true WHERE user_phone = $1 AND type = 'request' AND left(id, $2) = $3",
+      [phone, rprefix.length, rprefix]);
     res.json({ ok: true });
   } catch (e) { fail(res, 'read conv notifications', e); }
 });
