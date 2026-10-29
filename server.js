@@ -880,6 +880,20 @@ app.post('/api/notifications', softAuth, async (req, res) => {
   } catch (e) { fail(res, 'post notification', e); }
 });
 
+/* Mark the message notification of one conversation as read (for this user) */
+app.post('/api/notifications/read-conv', softAuth, async (req, res) => {
+  try {
+    const b = bodyOf(req);
+    const phone = str(b.phone), convId = str(b.convId);
+    if (!isPhone(phone) || !SAFE_ID.test(convId)) return res.status(400).json({ error: 'ورودی نامعتبر است' });
+    const prefix = 'NM-' + convId + '-';
+    await pool.query(
+      "UPDATE notifications SET read = true WHERE user_phone = $1 AND type = 'message' AND left(id, $2) = $3",
+      [phone, prefix.length, prefix]);
+    res.json({ ok: true });
+  } catch (e) { fail(res, 'read conv notifications', e); }
+});
+
 /* ============ MISSIONS API ============ */
 app.get('/api/missions/:phone', softAuth, async (req, res) => {
   try {
