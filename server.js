@@ -879,7 +879,7 @@ app.post('/api/conversations/:id/deal', softAuth, async (req, res) => {
     const other = conv.buyer_phone === me ? conv.seller_phone : conv.buyer_phone;
     try {
       await pool.query(`INSERT INTO notifications (id, user_phone, type, title, body, created_at) VALUES ($1,$2,'deal',$3,$4,$5)`,
-        [newId('N'), other, both ? 'معامله تأیید شد' : 'تأیید معامله', both ? 'هر دو طرف تأیید کردید؛ می‌توانید امتیاز بدهید.' : 'طرف مقابل می‌گوید معامله انجام شد. شما هم تأیید کنید.', Date.now()]);
+        ['ND-'+conv.id+'-'+newId(''), other, both ? 'معامله تأیید شد' : 'تأیید معامله', both ? 'هر دو طرف تأیید کردید؛ می‌توانید امتیاز بدهید.' : 'طرف مقابل می‌گوید معامله انجام شد. شما هم تأیید کنید.', Date.now()]);
     } catch (e) {}
     res.json({ ok: true, both });
   } catch (e) { fail(res, 'deal', e); }
@@ -899,7 +899,7 @@ app.post('/api/cron/deal-reminders', async (req, res) => {
     for (const c of r.rows) {
       for (const p of [c.buyer_phone, c.seller_phone]) {
         await pool.query(`INSERT INTO notifications (id, user_phone, type, title, body, created_at) VALUES ($1,$2,'deal-remind',$3,$4,$5)`,
-          [newId('N'), p, 'معامله انجام شد؟', 'درباره «' + String(c.listing_title || '').slice(0, 60) + '» چه شد؟ اگر معامله انجام شده، در گفتگو تأیید کنید.', Date.now()]);
+          ['NQ-'+c.id+'-'+newId(''), p, 'معامله انجام شد؟', 'درباره «' + String(c.listing_title || '').slice(0, 60) + '» چه شد؟ اگر معامله انجام شده، در گفتگو تأیید کنید.', Date.now()]);
       }
       await pool.query('UPDATE conversations SET deal_remind_at = $2 WHERE id = $1', [c.id, Date.now()]);
     }
@@ -949,6 +949,20 @@ app.post('/api/notifications/read-conv', softAuth, async (req, res) => {
       [phone, rprefix.length, rprefix]);
     res.json({ ok: true });
   } catch (e) { fail(res, 'read conv notifications', e); }
+});
+
+/* حذف اعلان‌های دیده‌شده (فقط برای خود کاربر) */
+app.post('/api/notifications/clear', softAuth, async (req, res) => {
+  try {
+    const b = bodyOf(req);
+    const phone = str(b.phone);
+    if (!isPhone(phone)) return res.status(400).json({ error: 'ورودی نامعتبر است' });
+    if (!canActAs(req, phone)) return res.status(403).json(FORBIDDEN);
+    const ids = (Array.isArray(b.ids) ? b.ids : []).map(str).filter(function (i) { return SAFE_ID.test(i); }).slice(0, 100);
+    if (!ids.length) return res.json({ ok: true, deleted: 0 });
+    const r = await pool.query('DELETE FROM notifications WHERE user_phone = $1 AND id = ANY($2::text[])', [phone, ids]);
+    res.json({ ok: true, deleted: r.rowCount });
+  } catch (e) { fail(res, 'clear notifications', e); }
 });
 
 /* ============ MISSIONS API ============ */
