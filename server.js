@@ -311,6 +311,10 @@ async function initDB() {
       comment TEXT,
       created_at BIGINT
     )`,
+    `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS buyer_deal_at BIGINT`,
+    `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS seller_deal_at BIGINT`,
+    `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS deal_remind_at BIGINT`,
+    `ALTER TABLE ratings ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE`,
     `CREATE TABLE IF NOT EXISTS notifications (
       id VARCHAR(50) PRIMARY KEY,
       user_phone VARCHAR(20),
@@ -845,13 +849,62 @@ app.post('/api/ratings', softAuth, async (req, res) => {
     const w = await rateLimit('rate:' + from, 30, 60 * MIN);
     if (w) return tooMany(res, w);
     const id = (typeof r.id === 'string' && SAFE_ID.test(r.id)) ? r.id : newId('R');
+    // «تأییدشده» یعنی هر دو طرف در یک گفتگو «معامله انجام شد» را زده‌اند
+    const vc = await pool.query(
+      `SELECT 1 FROM conversations WHERE buyer_deal_at IS NOT NULL AND seller_deal_at IS NOT NULL
+       AND ((buyer_phone=$1 AND seller_phone=$2) OR (buyer_phone=$2 AND seller_phone=$1)) LIMIT 1`, [from, to]);
+    const verified = vc.rows.length > 0;
     // اگر قبلاً به این نفر امتیاز داده، امتیاز قبلی به‌روز می‌شود (تکراری ساخته نمی‌شود)
     await pool.query(
-      `INSERT INTO ratings (id, from_phone, from_name, to_phone, score, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (from_phone, to_phone) DO UPDATE SET score = EXCLUDED.score, comment = EXCLUDED.comment, from_name = EXCLUDED.from_name, created_at = EXCLUDED.created_at`,
-      [id, from, str(r.fromName).slice(0, 100), to, score, str(r.comment).slice(0, 1000) || null, Date.now()]);
-    res.json({ ok: true, id });
+      `INSERT INTO ratings (id, from_phone, from_name, to_phone, score, comment, created_at, verified) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (from_phone, to_phone) DO UPDATE SET score = EXCLUDED.score, comment = EXCLUDED.comment, from_name = EXCLUDED.from_name, created_at = EXCLUDED.created_at, verified = EXCLUDED.verified`,
+      [id, from, str(r.fromName).slice(0, 100), to, score, str(r.comment).slice(0, 1000) || null, Date.now(), verified]);
+    res.json({ ok: true, id, verified });
   } catch (e) { fail(res, 'post rating', e); }
+});
+
+/* ============ DEAL CONFIRMATION ============ */
+// هر طرف گفتگو «معامله انجام شد» را می‌زند؛ وقتی هر دو زدند، امتیاز آن‌ها «تأییدشده» حساب می‌شود
+app.post('/api/conversations/:id/deal', softAuth, async (req, res) => {
+  try {
+    if (!req.auth) return res.status(401).json({ error: 'ابتدا وارد شوید' });
+    const me = req.auth.phone;
+    const c = await pool.query('SELECT * FROM conversations WHERE id = $1', [req.params.id]);
+    if (!c.rows.length) return res.status(404).json({ error: 'گفتگو پیدا نشد' });
+    const conv = c.rows[0];
+    if (!isMember(conv, me)) return res.status(403).json(FORBIDDEN);
+    const col = conv.buyer_phone === me ? 'buyer_deal_at' : 'seller_deal_at';
+    const r = await pool.query(`UPDATE conversations SET ${col} = COALESCE(${col}, $2) WHERE id = $1 RETURNING buyer_deal_at, seller_deal_at`, [conv.id, Date.now()]);
+    const both = !!(r.rows[0].buyer_deal_at && r.rows[0].seller_deal_at);
+    const other = conv.buyer_phone === me ? conv.seller_phone : conv.buyer_phone;
+    try {
+      await pool.query(`INSERT INTO notifications (id, user_phone, type, title, body, created_at) VALUES ($1,$2,'deal',$3,$4,$5)`,
+        [newId('N'), other, both ? 'معامله تأیید شد' : 'تأیید معامله', both ? 'هر دو طرف تأیید کردید؛ می‌توانید امتیاز بدهید.' : 'طرف مقابل می‌گوید معامله انجام شد. شما هم تأیید کنید.', Date.now()]);
+    } catch (e) {}
+    res.json({ ok: true, both });
+  } catch (e) { fail(res, 'deal', e); }
+});
+
+// گفتگوهایی که ≥۴۸ ساعت از اولین پیام گذشته و هنوز تأیید/یادآوری نشده‌اند → یادآوری به هر دو طرف
+// (Vercel بدون پردازش پس‌زمینه است؛ این مسیر باید با cron بیرونی یا Vercel Cron صدا زده شود)
+app.post('/api/cron/deal-reminders', async (req, res) => {
+  if (!process.env.CRON_SECRET || req.get('x-cron-secret') !== process.env.CRON_SECRET) return res.status(403).json(FORBIDDEN);
+  try {
+    const cutoff = Date.now() - 48 * 3600 * 1000;
+    const r = await pool.query(
+      `SELECT id, listing_title, buyer_phone, seller_phone FROM conversations
+       WHERE deal_remind_at IS NULL AND (buyer_deal_at IS NULL OR seller_deal_at IS NULL)
+       AND EXISTS (SELECT 1 FROM messages m WHERE m.conv_id = conversations.id AND m.created_at < $1)
+       LIMIT 200`, [cutoff]);
+    for (const c of r.rows) {
+      for (const p of [c.buyer_phone, c.seller_phone]) {
+        await pool.query(`INSERT INTO notifications (id, user_phone, type, title, body, created_at) VALUES ($1,$2,'deal-remind',$3,$4,$5)`,
+          [newId('N'), p, 'معامله انجام شد؟', 'درباره «' + String(c.listing_title || '').slice(0, 60) + '» چه شد؟ اگر معامله انجام شده، در گفتگو تأیید کنید.', Date.now()]);
+      }
+      await pool.query('UPDATE conversations SET deal_remind_at = $2 WHERE id = $1', [c.id, Date.now()]);
+    }
+    res.json({ ok: true, reminded: r.rows.length });
+  } catch (e) { fail(res, 'deal-reminders', e); }
 });
 
 /* ============ NOTIFICATIONS API ============ */
