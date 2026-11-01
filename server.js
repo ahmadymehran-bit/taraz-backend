@@ -756,6 +756,17 @@ app.get('/api/messages/:convId', softAuth, async (req, res) => {
   } catch (e) { fail(res, 'get messages', e); }
 });
 
+app.delete('/api/messages/:id', softAuth, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM messages WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.json({ ok: true });
+    const m = r.rows[0];
+    if (!req.auth || !canActAs(req, m.from_phone)) return res.status(403).json(FORBIDDEN);
+    await pool.query('DELETE FROM messages WHERE id = $1', [m.id]);
+    res.json({ ok: true });
+  } catch (e) { fail(res, 'delete message', e); }
+});
+
 app.post('/api/messages', softAuth, async (req, res) => {
   try {
     const m = bodyOf(req);
