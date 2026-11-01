@@ -167,7 +167,7 @@ function requireAdmin(req, res, next) {
 }
 // بدون توکن (فقط soft) مجاز؛ با توکن فقط خودش یا ادمین
 function canActAs(req, phone) {
-  if (!req.auth) return AUTH_MODE !== 'strict';
+  if (!req.auth) return false;
   return req.auth.phone === phone || req.auth.isAdmin;
 }
 
@@ -705,7 +705,7 @@ app.post('/api/capacities', softAuth, async (req, res) => {
 function isMember(conv, phone) { return conv.buyer_phone === phone || conv.seller_phone === phone; }
 // بدون توکن (soft) فقط وقتی مجاز است که حالت strict نباشد
 function canSeeConv(req, conv) {
-  if (!req.auth) return AUTH_MODE !== 'strict';
+  if (!req.auth) return false;
   return req.auth.isAdmin || isMember(conv, req.auth.phone);
 }
 
