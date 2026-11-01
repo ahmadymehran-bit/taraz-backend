@@ -943,6 +943,21 @@ app.post('/api/notifications', softAuth, async (req, res) => {
     const n = bodyOf(req);
     const to = str(n.userPhone);
     if (!isPhone(to)) return res.status(400).json({ error: 'شماره نامعتبر است' });
+    // اعلان برای خود کاربر آزاد؛ برای دیگران فقط «درخواست خرید» در گفتگوی مشترک
+    if (!(req.auth && req.auth.phone === to) && !(req.auth && req.auth.isAdmin)) {
+      if (req.auth) {
+        const nid = str(n.id), mt = /^NR-([A-Za-z0-9_-]+?)-\d+$/.exec(nid);
+        if (str(n.type) !== 'request' || !mt) return res.status(403).json(FORBIDDEN);
+        const cr = await pool.query('SELECT * FROM conversations WHERE id = $1', [mt[1]]);
+        if (!cr.rows.length || !isMember(cr.rows[0], req.auth.phone) || !isMember(cr.rows[0], to)) {
+          return res.status(403).json(FORBIDDEN);
+        }
+      } else if (!canActAs(req, to)) {
+        return res.status(403).json(FORBIDDEN);
+      } else {
+        return res.status(401).json(AUTH_EXPIRED);
+      }
+    }
     const key = 'notif:' + (req.auth ? req.auth.phone : clientIp(req));
     const w = await rateLimit(key, 60, 10 * MIN); if (w) return tooMany(res, w);
     const title = str(n.title).slice(0, 200), body = rawStr(n.body).slice(0, 1000);
