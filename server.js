@@ -961,6 +961,7 @@ app.post('/api/notifications/read-conv', softAuth, async (req, res) => {
     const b = bodyOf(req);
     const phone = str(b.phone), convId = str(b.convId);
     if (!isPhone(phone) || !SAFE_ID.test(convId)) return res.status(400).json({ error: 'ورودی نامعتبر است' });
+    if (!canActAs(req, phone)) return res.status(403).json(FORBIDDEN);
     const prefix = 'NM-' + convId + '-';
     await pool.query(
       "UPDATE notifications SET read = true WHERE user_phone = $1 AND type = 'message' AND left(id, $2) = $3",
