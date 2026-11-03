@@ -1207,7 +1207,7 @@ app.post('/api/ready', softAuth, async (req, res) => {
          details=COALESCE($8, ready_profiles.details)`,
       [phone, str(p.name).slice(0, 100), p.is_ready === true, str(p.service_type).slice(0, 50),
        str(p.region).slice(0, 100), rawStr(p.notes).slice(0, 1000), Date.now(),
-       (p.details && typeof p.details === 'object' && JSON.stringify(p.details).length < 4000) ? JSON.stringify(p.details) : null]);
+       (p.details && typeof p.details === 'object' && JSON.stringify(p.details).length < 80000) ? JSON.stringify(p.details) : null]);
     res.json({ ok: true });
   } catch (e) { fail(res, 'post ready', e); }
 });
