@@ -355,6 +355,7 @@ async function initDB() {
       notes TEXT,
       updated_at BIGINT
     )`,
+    `ALTER TABLE ready_profiles ADD COLUMN IF NOT EXISTS details JSONB`,
     `CREATE TABLE IF NOT EXISTS user_watches (
       id VARCHAR(50) PRIMARY KEY,
       user_phone VARCHAR(20),
@@ -1200,11 +1201,13 @@ app.post('/api/ready', softAuth, async (req, res) => {
     if (!isPhone(phone)) return res.status(400).json({ error: 'شماره نامعتبر است' });
     if (!canActAs(req, phone)) return res.status(403).json(FORBIDDEN);
     await pool.query(
-      `INSERT INTO ready_profiles (phone, name, is_ready, service_type, region, notes, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (phone) DO UPDATE SET name=$2, is_ready=$3, service_type=$4, region=$5, notes=$6, updated_at=$7`,
+      `INSERT INTO ready_profiles (phone, name, is_ready, service_type, region, notes, updated_at, details)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (phone) DO UPDATE SET name=$2, is_ready=$3, service_type=$4, region=$5, notes=$6, updated_at=$7,
+         details=COALESCE($8, ready_profiles.details)`,
       [phone, str(p.name).slice(0, 100), p.is_ready === true, str(p.service_type).slice(0, 50),
-       str(p.region).slice(0, 100), rawStr(p.notes).slice(0, 1000), Date.now()]);
+       str(p.region).slice(0, 100), rawStr(p.notes).slice(0, 1000), Date.now(),
+       (p.details && typeof p.details === 'object' && JSON.stringify(p.details).length < 4000) ? JSON.stringify(p.details) : null]);
     res.json({ ok: true });
   } catch (e) { fail(res, 'post ready', e); }
 });
