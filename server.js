@@ -660,14 +660,24 @@ app.delete('/api/listings/:id', requireAuth, async (req, res) => {
 /* ============ ADMIN STATS ============ */
 app.get('/api/admin/stats', requireAdmin, async (req, res) => {
   try {
-    const u = await pool.query('SELECT COUNT(*) FROM users');
-    const l = await pool.query('SELECT COUNT(*) FROM listings');
-    const c = await pool.query('SELECT COUNT(*) FROM conversations');
-    res.json({
-      users: parseInt(u.rows[0].count, 10),
-      listings: parseInt(l.rows[0].count, 10),
-      conversations: parseInt(c.rows[0].count, 10)
-    });
+    // شروع امروز به وقت ایران (UTC+3:30، بدون تغییر ساعت تابستانی)
+    const IR_OFFSET = 3.5 * 3600 * 1000;
+    const dayStart = Math.floor((Date.now() + IR_OFFSET) / 86400000) * 86400000 - IR_OFFSET;
+    const weekStart = dayStart - 6 * 86400000;
+    const q = async (sql, params = []) => parseInt((await pool.query(sql, params)).rows[0].count, 10);
+    const [users, listings, convs, usersToday, listingsToday, usersWeek, listingsWeek, capacities] = await Promise.all([
+      q('SELECT COUNT(*) FROM users'),
+      q('SELECT COUNT(*) FROM listings'),
+      q('SELECT COUNT(*) FROM conversations'),
+      q('SELECT COUNT(*) FROM users WHERE joined_at >= $1', [dayStart]),
+      q('SELECT COUNT(*) FROM listings WHERE created_at >= $1', [dayStart]),
+      q('SELECT COUNT(*) FROM users WHERE joined_at >= $1', [weekStart]),
+      q('SELECT COUNT(*) FROM listings WHERE created_at >= $1', [weekStart]),
+      q('SELECT COUNT(*) FROM capacities')
+    ]);
+    res.json({ users, listings, conversations: convs, capacities,
+      users_today: usersToday, listings_today: listingsToday,
+      users_week: usersWeek, listings_week: listingsWeek });
   } catch (e) { fail(res, 'admin stats', e); }
 });
 
